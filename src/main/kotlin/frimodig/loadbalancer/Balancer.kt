@@ -36,9 +36,10 @@ enum class Algorithm: Selector {
     ROUND_ROBIN {
         private var previous = -1
         override fun get(providers: List<Provider>): Provider {
-            val current = if (previous < providers.size) {
-                previous++
-            } else -1
+            val current = ++previous
+            if (previous == providers.lastIndex) {
+                previous = -1
+            }
             return providers[current]
         }
     }
