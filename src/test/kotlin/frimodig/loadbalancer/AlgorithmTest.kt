@@ -1,7 +1,6 @@
 package frimodig.loadbalancer
 
-import main.kotlin.frimodig.loadbalancer.Algorithm
-import main.kotlin.frimodig.loadbalancer.provider.Provider
+import frimodig.loadbalancer.provider.Provider
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.Test
 

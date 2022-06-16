@@ -1,6 +1,6 @@
-package main.kotlin.frimodig.loadbalancer
+package frimodig.loadbalancer
 
-import main.kotlin.frimodig.loadbalancer.provider.Provider
+import frimodig.loadbalancer.provider.Provider
 
 const val providerLimit = 10
 
@@ -27,6 +27,8 @@ class Balancer {
     fun removeProvider(vararg identifier: String) {
         identifier.forEach { providers.remove(it) }
     }
+
+    fun providers() = providers.keys
 }
 
 enum class Algorithm: Selector {

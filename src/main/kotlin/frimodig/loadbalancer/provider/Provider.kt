@@ -1,4 +1,4 @@
-package main.kotlin.frimodig.loadbalancer.provider
+package frimodig.loadbalancer.provider
 
 // sealed class result?
 class Provider(
