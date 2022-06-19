@@ -5,4 +5,6 @@ class Provider(
     private val identifier: String
 ) {
     fun get() = identifier
+
+    fun check() {}
 }
