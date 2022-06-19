@@ -2,9 +2,15 @@ package frimodig.loadbalancer
 
 import frimodig.loadbalancer.provider.Provider
 import frimodig.loadbalancer.provider.ProviderStatus
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.withContext
 import mu.KotlinLogging
 import java.util.Timer
 import java.util.TimerTask
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 const val providerLimit = 10
 const val providerMaxRequests = 10
@@ -13,6 +19,10 @@ const val heartbeatIntervalMs = 10_000L
 private val logger = KotlinLogging.logger {}
 
 class Balancer {
+
+    private val semaphoreLock = ReentrantLock()
+    private var semaphore = Semaphore(1)
+    private var currentMaxRequests = 1
 
     private val timer = Timer()
     private var algorithm = Algorithm.RANDOM
@@ -25,6 +35,7 @@ class Balancer {
                     providers.forEach {
                         heartbeat(it)
                     }
+                    setMaxRequests()
                 }
             },
             heartbeatIntervalMs,
@@ -32,7 +43,11 @@ class Balancer {
         )
     }
 
-    fun get(): String = algorithm.get(activeProviders()).get()
+    suspend fun get(): String = withContext(Dispatchers.Default) {
+        semaphore.withPermit {
+            algorithm.get(activeProviders()).get()
+        }
+    }
 
     fun setAlgorithm(algorithm: Algorithm) {
         this.algorithm = algorithm
@@ -48,6 +63,7 @@ class Balancer {
             providers.add(Provider(it))
             logger.info { "Provider $it added to the pool" }
         }
+        setMaxRequests()
     }
 
     fun removeProvider(vararg identifier: String) {
@@ -55,6 +71,7 @@ class Balancer {
             providers.removeIf { provider -> provider.identifier == it }
             logger.info { "Provider $it removed from pool" }
         }
+        setMaxRequests()
     }
 
     fun providerIds() = providers.map { it.identifier }
@@ -79,6 +96,20 @@ class Balancer {
                 provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
                 logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
             }
+        }
+    }
+
+    private fun setMaxRequests() {
+        semaphoreLock.withLock {
+            // Semaphore needs at least 1 permit and inUse can't
+            val inUse = currentMaxRequests - semaphore.availablePermits
+            val newMax = maxOf(activeProviders().size * providerMaxRequests, 1)
+            semaphore = Semaphore(
+                permits = newMax,
+                acquiredPermits = inUse
+            )
+            currentMaxRequests = newMax
+            logger.info { "Max concurrent requests set to $newMax" }
         }
     }
 }
