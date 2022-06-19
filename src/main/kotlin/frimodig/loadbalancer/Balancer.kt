@@ -18,35 +18,39 @@ class Balancer {
     private val unhealthyProviders = mutableMapOf<Provider, Boolean>()
 
     init {
-        timer.schedule(object : TimerTask() {
-            override fun run() {
-                providers.forEach {
-                    try {
-                        it.check()
-                    } catch (e: Exception) {
-                        providers.remove(it)
-                        logger.error(e) { "Provider ${it.identifier} removed from pool as unhealthy" }
-                        unhealthyProviders[it] = false
+        timer.schedule(
+            object : TimerTask() {
+                override fun run() {
+                    providers.forEach {
+                        try {
+                            it.check()
+                        } catch (e: Exception) {
+                            providers.remove(it)
+                            logger.error(e) { "Provider ${it.identifier} removed from pool as unhealthy" }
+                            unhealthyProviders[it] = false
+                        }
                     }
-                }
-                unhealthyProviders.forEach {
-                    val (provider, previousCheckSuccessful) = it
-                    try {
-                        provider.check()
-                        if (previousCheckSuccessful) {
-                            unhealthyProviders.remove(provider)
-                            providers.add(provider)
-                            logger.info { "Provider ${provider.identifier} returned to the pool" }
-                        } else {
+                    unhealthyProviders.forEach {
+                        val (provider, previousCheckSuccessful) = it
+                        try {
+                            provider.check()
+                            if (previousCheckSuccessful) {
+                                unhealthyProviders.remove(provider)
+                                providers.add(provider)
+                                logger.info { "Provider ${provider.identifier} returned to the pool" }
+                            } else {
+                                unhealthyProviders[provider] = false
+                            }
+                        } catch (e: Exception) {
+                            logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
                             unhealthyProviders[provider] = false
                         }
-                    } catch (e: Exception) {
-                        logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
-                        unhealthyProviders[provider] = false
                     }
                 }
-            }
-        }, heartbeatIntervalMs, heartbeatIntervalMs)
+            },
+            heartbeatIntervalMs,
+            heartbeatIntervalMs
+        )
     }
 
     fun get(): String = algorithm.get(providers).get()
@@ -71,7 +75,7 @@ class Balancer {
     fun removeProvider(vararg identifier: String) {
         identifier.distinct().forEach {
             providers.removeIf { provider -> provider.identifier == it }
-            unhealthyProviders.remove( unhealthyProviders.keys.firstOrNull() { provider -> provider.identifier == it })
+            unhealthyProviders.remove(unhealthyProviders.keys.firstOrNull { provider -> provider.identifier == it })
             logger.info { "Provider $it removed from pool" }
         }
     }
@@ -80,7 +84,7 @@ class Balancer {
     fun unhealthyProviderIds() = unhealthyProviders.map { it.key.identifier }
 }
 
-enum class Algorithm: Selector {
+enum class Algorithm : Selector {
     RANDOM {
         override fun get(providers: List<Provider>) = providers.random()
     },
