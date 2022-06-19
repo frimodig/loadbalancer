@@ -1,11 +1,13 @@
 package frimodig.loadbalancer
 
 import frimodig.loadbalancer.provider.Provider
+import frimodig.loadbalancer.provider.ProviderStatus
 import mu.KotlinLogging
 import java.util.Timer
 import java.util.TimerTask
 
 const val providerLimit = 10
+const val providerMaxRequests = 10
 const val heartbeatIntervalMs = 10_000L
 
 private val logger = KotlinLogging.logger {}
@@ -15,35 +17,30 @@ class Balancer {
     private val timer = Timer()
     private var algorithm = Algorithm.RANDOM
     private val providers = mutableListOf<Provider>()
-    private val unhealthyProviders = mutableMapOf<Provider, Boolean>()
 
     init {
         timer.schedule(
             object : TimerTask() {
                 override fun run() {
                     providers.forEach {
-                        try {
+                        if (it.status.healthy) try {
                             it.check()
                         } catch (e: Exception) {
-                            providers.remove(it)
+                            it.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
                             logger.error(e) { "Provider ${it.identifier} removed from pool as unhealthy" }
-                            unhealthyProviders[it] = false
                         }
-                    }
-                    unhealthyProviders.forEach {
-                        val (provider, previousCheckSuccessful) = it
-                        try {
-                            provider.check()
-                            if (previousCheckSuccessful) {
-                                unhealthyProviders.remove(provider)
-                                providers.add(provider)
-                                logger.info { "Provider ${provider.identifier} returned to the pool" }
-                            } else {
-                                unhealthyProviders[provider] = false
+                        else {
+                            try {
+                                it.check()
+                                if (it.status.previousHeartbeatOK) {
+                                    it.status = ProviderStatus(healthy = true, previousHeartbeatOK = true)
+                                } else {
+                                    it.status = ProviderStatus(healthy = false, previousHeartbeatOK = true)
+                                }
+                            } catch (e: Exception) {
+                                it.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
+                                logger.warn(e) { "Provider ${it.identifier} is still unhealthy" }
                             }
-                        } catch (e: Exception) {
-                            logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
-                            unhealthyProviders[provider] = false
                         }
                     }
                 }
@@ -53,7 +50,7 @@ class Balancer {
         )
     }
 
-    fun get(): String = algorithm.get(providers).get()
+    fun get(): String = algorithm.get(activeProviders()).get()
 
     fun setAlgorithm(algorithm: Algorithm) {
         this.algorithm = algorithm
@@ -61,8 +58,7 @@ class Balancer {
     }
 
     fun registerProvider(vararg identifier: String) {
-        // For now at least, we will ignore duplicate providers
-        val newProviderIds = identifier.distinct().filter { !providerIds().contains(it) && !unhealthyProviderIds().contains(it) }
+        val newProviderIds = identifier.distinct().filter { !providerIds().contains(it) }
         check(providers.size + newProviderIds.size < providerLimit) {
             "Can not register ${newProviderIds.size} new providers. Current providers: ${providers.size}, limit: $providerLimit"
         }
@@ -75,13 +71,12 @@ class Balancer {
     fun removeProvider(vararg identifier: String) {
         identifier.distinct().forEach {
             providers.removeIf { provider -> provider.identifier == it }
-            unhealthyProviders.remove(unhealthyProviders.keys.firstOrNull { provider -> provider.identifier == it })
             logger.info { "Provider $it removed from pool" }
         }
     }
 
     fun providerIds() = providers.map { it.identifier }
-    fun unhealthyProviderIds() = unhealthyProviders.map { it.key.identifier }
+    fun activeProviders() = providers.filter { it.status.healthy }
 }
 
 enum class Algorithm : Selector {
@@ -92,7 +87,7 @@ enum class Algorithm : Selector {
         private var previous = -1
         override fun get(providers: List<Provider>): Provider {
             val current = ++previous
-            if (previous == providers.lastIndex) {
+            if (previous >= providers.lastIndex) {
                 previous = -1
             }
             return providers[current]

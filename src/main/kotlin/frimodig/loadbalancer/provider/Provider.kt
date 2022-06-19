@@ -1,10 +1,15 @@
 package frimodig.loadbalancer.provider
 
-// sealed class result?
-class Provider(
-    val identifier: String
-) {
-    fun get() = identifier
+data class Provider (
+    val identifier: String,
+    var status: ProviderStatus = ProviderStatus(),
+    ) {
+        fun get() = identifier
 
-    fun check() {}
+        fun check() {}
 }
+
+data class ProviderStatus(
+    var healthy: Boolean = true,
+    var previousHeartbeatOK: Boolean = true,
+)
