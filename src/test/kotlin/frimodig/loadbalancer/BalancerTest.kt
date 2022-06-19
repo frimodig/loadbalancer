@@ -21,7 +21,7 @@ class BalancerTest {
         fun `Will ignore duplicate providers`() {
             balancer.registerProvider("a", "a")
 
-            assert(balancer.providers().size == 1)
+            assert(balancer.providerIds().size == 1)
         }
 
         @Test
@@ -30,6 +30,15 @@ class BalancerTest {
             assertThrows<IllegalStateException> {
                 balancer.registerProvider(*providers.toTypedArray())
             }
+        }
+
+        @Test
+        fun `Will remove a provider`() {
+            val id = "id"
+            balancer.registerProvider(id)
+            balancer.removeProvider(id)
+
+            assert(balancer.providerIds().isEmpty())
         }
     }
 }

@@ -14,42 +14,42 @@ class Balancer {
 
     private val timer = Timer()
     private var algorithm = Algorithm.RANDOM
-    private val providers = mutableMapOf<String, Provider>()
-    private val unhealthyProviders = mutableMapOf<String, Pair<Provider, Boolean>>()
+    private val providers = mutableListOf<Provider>()
+    private val unhealthyProviders = mutableMapOf<Provider, Boolean>()
 
     init {
         timer.schedule(object : TimerTask() {
             override fun run() {
                 providers.forEach {
                     try {
-                        it.value.check()
+                        it.check()
                     } catch (e: Exception) {
-                        providers.remove(it.key)
-                        logger.error(e) { "Provider ${it.key} removed from pool as unhealthy" }
-                        unhealthyProviders[it.key] = Pair(it.value, false)
+                        providers.remove(it)
+                        logger.error(e) { "Provider ${it.identifier} removed from pool as unhealthy" }
+                        unhealthyProviders[it] = false
                     }
                 }
                 unhealthyProviders.forEach {
-                    val (provider, previousCheckSuccessful) = it.value
+                    val (provider, previousCheckSuccessful) = it
                     try {
                         provider.check()
                         if (previousCheckSuccessful) {
-                            unhealthyProviders.remove(it.key)
-                            providers[it.key] = provider
-                            logger.info { "Provider ${it.key} returned to the pool" }
+                            unhealthyProviders.remove(provider)
+                            providers.add(provider)
+                            logger.info { "Provider ${provider.identifier} returned to the pool" }
                         } else {
-                            unhealthyProviders[it.key] = Pair(provider, true)
+                            unhealthyProviders[provider] = false
                         }
                     } catch (e: Exception) {
-                        logger.warn(e) { "Provider ${it.key} is still unhealthy" }
-                        unhealthyProviders[it.key] = Pair(provider, false)
+                        logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
+                        unhealthyProviders[provider] = false
                     }
                 }
             }
         }, heartbeatIntervalMs, heartbeatIntervalMs)
     }
 
-    fun get(): String = algorithm.get(providers.values.toList()).get()
+    fun get(): String = algorithm.get(providers).get()
 
     fun setAlgorithm(algorithm: Algorithm) {
         this.algorithm = algorithm
@@ -58,25 +58,26 @@ class Balancer {
 
     fun registerProvider(vararg identifier: String) {
         // For now at least, we will ignore duplicate providers
-        val newProviderIds = identifier.filter { !providers.containsKey(it) && !unhealthyProviders.containsKey(it) }
+        val newProviderIds = identifier.distinct().filter { !providerIds().contains(it) && !unhealthyProviderIds().contains(it) }
         check(providers.size + newProviderIds.size < providerLimit) {
             "Can not register ${newProviderIds.size} new providers. Current providers: ${providers.size}, limit: $providerLimit"
         }
         newProviderIds.forEach {
-            providers[it] = Provider(it)
+            providers.add(Provider(it))
             logger.info { "Provider $it added to the pool" }
         }
     }
 
     fun removeProvider(vararg identifier: String) {
-        identifier.forEach {
-            providers.remove(it)
-            unhealthyProviders.remove(it)
+        identifier.distinct().forEach {
+            providers.removeIf { provider -> provider.identifier == it }
+            unhealthyProviders.remove( unhealthyProviders.keys.firstOrNull() { provider -> provider.identifier == it })
             logger.info { "Provider $it removed from pool" }
         }
     }
 
-    fun providers() = providers.keys
+    fun providerIds() = providers.map { it.identifier }
+    fun unhealthyProviderIds() = unhealthyProviders.map { it.key.identifier }
 }
 
 enum class Algorithm: Selector {
