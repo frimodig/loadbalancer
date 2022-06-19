@@ -13,6 +13,10 @@ private val logger = KotlinLogging.logger {}
 class Balancer {
 
     private val timer = Timer()
+    private var algorithm = Algorithm.RANDOM
+    private val providers = mutableMapOf<String, Provider>()
+    private val unhealthyProviders = mutableMapOf<String, Pair<Provider, Boolean>>()
+
     init {
         timer.schedule(object : TimerTask() {
             override fun run() {
@@ -20,16 +24,30 @@ class Balancer {
                     try {
                         it.value.check()
                     } catch (e: Exception) {
-                        logger.warn(e) { "Provider ${it.key} removed from pool as unhealthy" }
                         providers.remove(it.key)
+                        logger.error(e) { "Provider ${it.key} removed from pool as unhealthy" }
+                        unhealthyProviders[it.key] = Pair(it.value, false)
+                    }
+                }
+                unhealthyProviders.forEach {
+                    val (provider, previousCheckSuccessful) = it.value
+                    try {
+                        provider.check()
+                        if (previousCheckSuccessful) {
+                            unhealthyProviders.remove(it.key)
+                            providers[it.key] = provider
+                            logger.info { "Provider ${it.key} returned to the pool" }
+                        } else {
+                            unhealthyProviders[it.key] = Pair(provider, true)
+                        }
+                    } catch (e: Exception) {
+                        logger.warn(e) { "Provider ${it.key} is still unhealthy" }
+                        unhealthyProviders[it.key] = Pair(provider, false)
                     }
                 }
             }
         }, heartbeatIntervalMs, heartbeatIntervalMs)
     }
-
-    private var algorithm = Algorithm.RANDOM
-    private val providers = mutableMapOf<String, Provider>()
 
     fun get(): String = algorithm.get(providers.values.toList()).get()
 
@@ -40,7 +58,7 @@ class Balancer {
 
     fun registerProvider(vararg identifier: String) {
         // For now at least, we will ignore duplicate providers
-        val newProviderIds = identifier.filter { !providers.containsKey(it) }
+        val newProviderIds = identifier.filter { !providers.containsKey(it) && !unhealthyProviders.containsKey(it) }
         check(providers.size + newProviderIds.size < providerLimit) {
             "Can not register ${newProviderIds.size} new providers. Current providers: ${providers.size}, limit: $providerLimit"
         }
@@ -53,6 +71,7 @@ class Balancer {
     fun removeProvider(vararg identifier: String) {
         identifier.forEach {
             providers.remove(it)
+            unhealthyProviders.remove(it)
             logger.info { "Provider $it removed from pool" }
         }
     }
