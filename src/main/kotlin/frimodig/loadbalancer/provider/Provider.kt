@@ -1,12 +1,12 @@
 package frimodig.loadbalancer.provider
 
-data class Provider (
+data class Provider(
     val identifier: String,
     var status: ProviderStatus = ProviderStatus(),
-    ) {
-        fun get() = identifier
+) {
+    fun get() = identifier
 
-        fun check() {}
+    fun check() {}
 }
 
 data class ProviderStatus(
