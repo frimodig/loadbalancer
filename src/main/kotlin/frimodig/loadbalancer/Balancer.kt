@@ -23,25 +23,7 @@ class Balancer {
             object : TimerTask() {
                 override fun run() {
                     providers.forEach {
-                        if (it.status.healthy) try {
-                            it.check()
-                        } catch (e: Exception) {
-                            it.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
-                            logger.error(e) { "Provider ${it.identifier} removed from pool as unhealthy" }
-                        }
-                        else {
-                            try {
-                                it.check()
-                                if (it.status.previousHeartbeatOK) {
-                                    it.status = ProviderStatus(healthy = true, previousHeartbeatOK = true)
-                                } else {
-                                    it.status = ProviderStatus(healthy = false, previousHeartbeatOK = true)
-                                }
-                            } catch (e: Exception) {
-                                it.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
-                                logger.warn(e) { "Provider ${it.identifier} is still unhealthy" }
-                            }
-                        }
+                        heartbeat(it)
                     }
                 }
             },
@@ -77,6 +59,28 @@ class Balancer {
 
     fun providerIds() = providers.map { it.identifier }
     fun activeProviders() = providers.filter { it.status.healthy }
+
+    private fun heartbeat(provider: Provider) {
+        if (provider.status.healthy) try {
+            provider.check()
+        } catch (e: Exception) {
+            provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
+            logger.error(e) { "Provider ${provider.identifier} removed from pool as unhealthy" }
+        }
+        else {
+            try {
+                provider.check()
+                if (provider.status.previousHeartbeatOK) {
+                    provider.status = ProviderStatus(healthy = true, previousHeartbeatOK = true)
+                } else {
+                    provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = true)
+                }
+            } catch (e: Exception) {
+                provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
+                logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
+            }
+        }
+    }
 }
 
 enum class Algorithm : Selector {
