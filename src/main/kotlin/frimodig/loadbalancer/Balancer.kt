@@ -70,7 +70,6 @@ class Balancer {
 
     fun providerIds() = providers.map { it.identifier }
     fun activeProviders() = providers.filter { it.status.healthy }
-
 }
 
 enum class Algorithm : Selector {
