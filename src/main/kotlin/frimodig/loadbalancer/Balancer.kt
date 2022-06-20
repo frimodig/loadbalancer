@@ -1,7 +1,6 @@
 package frimodig.loadbalancer
 
 import frimodig.loadbalancer.provider.Provider
-import frimodig.loadbalancer.provider.ProviderStatus
 import frimodig.loadbalancer.ratelimiter.RateLimiter
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.withPermit
@@ -28,7 +27,7 @@ class Balancer {
             object : TimerTask() {
                 override fun run() {
                     providers.forEach {
-                        heartbeat(it)
+                        it.heartbeat()
                     }
                     rateLimiter.setMaxRequests(activeProviders().size)
                 }
@@ -72,27 +71,6 @@ class Balancer {
     fun providerIds() = providers.map { it.identifier }
     fun activeProviders() = providers.filter { it.status.healthy }
 
-    private fun heartbeat(provider: Provider) {
-        if (provider.status.healthy) try {
-            provider.check()
-        } catch (e: Exception) {
-            provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
-            logger.error(e) { "Provider ${provider.identifier} removed from pool as unhealthy" }
-        }
-        else {
-            try {
-                provider.check()
-                if (provider.status.previousHeartbeatOK) {
-                    provider.status = ProviderStatus(healthy = true, previousHeartbeatOK = true)
-                } else {
-                    provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = true)
-                }
-            } catch (e: Exception) {
-                provider.status = ProviderStatus(healthy = false, previousHeartbeatOK = false)
-                logger.warn(e) { "Provider ${provider.identifier} is still unhealthy" }
-            }
-        }
-    }
 }
 
 enum class Algorithm : Selector {
